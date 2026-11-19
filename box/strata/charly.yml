@@ -1,0 +1,131 @@
+# The strata POD — the Strata engine served from the CDI pod contract.
+#
+# THIS BOX IS THE POD CONTRACT, not a copy of it: `base: pod-cdi.pod-cdi` composes
+# opencharly/pod-cdi, whose `layer-cdi` owns the rule "the driver comes from the HOST through the
+# NVIDIA CDI spec, and the image bakes none of it" — and whose own plan steps FAIL THE BUILD when
+# a host-coupled driver library or an `nvidia*` binary is baked (`cdi-no-baked-driver-libs`,
+# `cdi-no-baked-driver-binaries`). The engine layer in opencharly/layer-strata therefore composes
+# `layer-cdi` and NOTHING from `layer-nvidia`, which is the VM contract. `PIN-CHAIN.md` proves
+# that chain; `AGENTS.md` states the rule this repo enforces on itself.
+#
+# WHY THIS FILE HAS NO `plan:` BLOCK. Every assertion about the engine's surface belongs to the
+# candy that owns that surface — `strata-terminal-version`, `strata-engine-component`,
+# `strata-vision-binary`, `strata-container-scripts`, `strata-health`, `strata-engine-usable`,
+# `strata-projection`, `strata-api-gate`, `strata-completion` all live in
+# opencharly/layer-strata's `candy/strata/charly.yml` and run against every image that composes
+# it. Re-deriving one of them here would be the same rule in a second place (R2), and the day the
+# two disagree the copy is the one that is wrong. The CDI contract is likewise asserted once, by
+# the layer that owns it. What is left for the box is the composition itself — and the live
+# witness is the root manifest's `check-strata-gpu-pod` bed, not a build-context step.
+#
+strata:
+    candy:
+        description: |
+            The Strata POD — Qwen3.8-Flash-Next (a 125B-parameter MoE) served from ONE consumer
+            NVIDIA card plus system RAM, exposing OpenAI-, Anthropic- and Responses-compatible
+            APIs on port 8080. Deploy it with `charly config strata`; probe it with
+            `charly check run check-strata-gpu-pod`.
+
+            The substrate is the point. A GPU POD DOES NOT OWN ITS DRIVER: the kernel module is
+            host-global, so the driver user-space is injected per container by the runtime from
+            the NVIDIA container toolkit's CDI spec. This box therefore bases on
+            opencharly/pod-cdi — the POD contract — and composes NOTHING from layer-nvidia, which
+            bakes the driver user-space and belongs to opencharly/vm-nvidia. layer-cdi's plan
+            steps enforce the boundary by failing the build when a host-coupled driver library or
+            an `nvidia*` binary is baked in, so the boundary is a property of the artifact and
+            not of a reviewer's attention.
+
+            The engine is opencharly/layer-strata's candy: upstream's PUBLISHED Terminal and
+            signed CUDA-13 engine component, installed from the pinned release with both digests
+            verified before anything is unpacked — never compiled on the user's machine, never
+            compiled on the first start. The runtime is upstream's own container entrypoint; the
+            configuration is the deployment's `env:` under upstream's own variable names; the key
+            is `API_KEY`, declared REQUIRED by the layer so `charly config` mints one rather than
+            letting the engine serve without it. The model store is a host bind at
+            `~/.local/share/strata` mounted at `/data` (`Strata-data/` for the weights and the
+            prepared pack, `state/` for the preset and the key, `install/` for the run settings).
+            The weights are 37-188 GB and licensed separately from the engine, so they never
+            enter the image, and no first start is triggered by building it.
+        # The POD contract's box, reached through the root manifest's namespace import (the import
+        # belongs to the PROJECT, not to a discovered box file — measured; see `charly.yml`'s
+        # `import:` comment). The pin is a TAG — a merged ref.
+        base: pod-cdi.pod-cdi
+        # On the BOX, not in `defaults:`, for the same reason the base declares its own: an image
+        # states its own contract. The released engine components are published for linux/x86_64
+        # only — there is no arm64 artifact to install.
+        platform:
+            - linux/amd64
+        # `build:` is DECLARED HERE because it does not cross the namespace boundary from the base.
+        # Measured 2026-11-19 in a staged probe project with `base: pod-cdi.pod-cdi` and no
+        # `build:`:
+        #   charly: error: command "list": InvokeProvider build:project op=resolve: build project:
+        #   resolving box "strata": image strata: build: field required (set in image, base, or
+        #   defaults)
+        # `distro:` is NOT declared, and that asymmetry is measured too: with this same
+        # `build: [pac]` the resolved box reports `"distro": ["cachyos","arch"]`,
+        # `"build_formats": ["pac"]` and `"tags": ["all","cachyos","arch","pac"]` — the distro TAG
+        # CHAIN is inherited across the namespace, the build FORMAT LIST is not. Restating the
+        # chain here would be a second copy of a value the base already states.
+        #
+        # `builder:` is not declared either: no candy reachable from this box needs a
+        # pixi/npm/cargo/aur multi-stage builder — the generated tree carries builder stages only
+        # inside the base's own `pod-cdi.arch.*` namespace. A future candy that needs one must add
+        # the `arch` namespace import AND its own `builder:` map here.
+        build:
+            - pac
+        candy:
+            # opencharly/layer-strata's engine candy: upstream's released Terminal + signed CUDA-13
+            # engine component, upstream's own entrypoint/healthcheck/wrapper, the rootless XDG
+            # model store, the supervised service, and every surface assertion the image carries.
+            # Pinned by TAG — see the DRAFT note at the top of this file for the `T1` re-pin.
+            #
+            # THE SUBPATH FORM IS LOAD-BEARING. `<repo>/candy/<name>` names the candy's own
+            # directory; the repo-root form (`@github.com/opencharly/layer-strata:<tag>`) does not
+            # resolve for this candy — measured 2026-11-19, both verbs refuse it with
+            #   box "strata": candy "github.com/opencharly/layer-strata" not found
+            #   global candy order: resolving candies for image "strata": unknown candy "…"
+            # The repo-root form that pod-cdi (`layer-cdi`) and pod-qdrant (`layer-qdrant`) use
+            # works for a repo whose discovered tree carries its candy at the repo root; the
+            # subpath form is what pod-qdrant itself uses for a candy inside another repo
+            # (`plugin-qdrant/candy/plugin-qdrant`).
+            - '@github.com/opencharly/layer-strata/candy/strata:v2026.323.1751'
+        # IN THIS REPO. The block below is inherited from opencharly/layer-strata's `box/strata` —
+        # the image it was measured on is the same image this box builds — and it is kept verbatim.
+        # The deploy side needs no change: a box-level `security:` is baked into the
+        # `ai.opencharly.security` label (the emitted Containerfile carries
+        # `{"security_opt":["no-new-privileges"]}`) and UNIONED onto the deploy's own args. Its
+        # resolved SET, however, is captured into the deploy state at `charly deploy add` time, so a
+        # `security:` added AFTER a deploy exists only reaches `charly config` after
+        # `charly deploy del` + `charly deploy add` — `AGENTS.md` says so where the operator reads it.
+        security:
+            # The workload never needs to escalate: it runs as uid 1000 under supervisord and the GPU
+            # arrives as a CDI device, not as a privilege. Measured on this image with the CDI device
+            # and a bind volume, under `--userns=host --user 0 --cap-drop ALL
+            # --security-opt no-new-privileges`, the whole chain runs — supervisord, `strata` RUNNING,
+            # `Engine 0.1.62 (cuda) is installed`, `components engine` `usable: true, signed: true`, the
+            # bind writable and host files owned by 1000 — while `podman info` reports `rootless=true`.
+            # So this option makes an ALREADY-TRUE zero-escalation posture enforced instead of
+            # incidental. It unions onto the deploy's own security args (the deploy's `security_opt`
+            # is a list these are appended to), so it hardens every consumer of the image.
+            #
+            # `--userns=host` is upstream-of-us, not a choice made here: the pod deploy emits it for a
+            # unit that carries a CDI device (opencharly/plugin-deploy-pod#82), because the kernel's
+            # idmapped-mount path (`mount_setattr AT_RECURSIVE MOUNT_ATTR_IDMAP`) needs CAP_SYS_ADMIN in
+            # the user namespace that owns the filesystem's superblock, and a rootless container cannot
+            # idmap HOST files. Under `userns=host`, container uid 0 IS the invoking host user, so
+            # `User=0:0` in the unit is the same person, not a root escalation.
+            #
+            # `cap_drop` is not expressible in this schema; filed as a schema gap rather than worked
+            # around (see the PR body's `## Filed issues`).
+            security_opt:
+                - no-new-privileges
+
+strata-skill:
+    skill:
+        name: strata
+        family: strata
+        owner: strata
+        triggers:
+            - 'the Strata box / the Qwen3.8-Flash-Next inference engine / an OpenAI- or Anthropic-compatible API on port 8080'
+            - 'deploying a local 125B-class model server on one consumer GPU'
+            - 'a service that needs an OpenAI- or Anthropic-speaking endpoint on the host'

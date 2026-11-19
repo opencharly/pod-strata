@@ -1,0 +1,9 @@
+# charly build artifacts — never committed
+.build/
+.check/
+
+# `.containerignore` / `.dockerignore` are NOT ignored here, deliberately: `charly box generate`
+# emits them at the project root (source: `defaults.context_ignore`), they are byte-identical to
+# the pair opencharly/pod-cdi commits, and a committed copy is what makes this repo's build
+# context readable without running the generator. They are generated files — regenerate them,
+# never hand-edit them.

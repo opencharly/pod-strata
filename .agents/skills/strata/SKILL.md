@@ -1,0 +1,247 @@
+---
+name: strata
+description: |
+  Strata pod — the Qwen3.8-Flash-Next inference engine (OpenAI-, Responses- and
+  Anthropic-compatible APIs on port 8080) served from the NVIDIA CDI pod contract, with the
+  model store bound from the user's XDG data directory. Use when deploying a local
+  125B-class model server, or when a service needs an OpenAI- or Anthropic-speaking endpoint
+  on the host.
+---
+
+# strata
+
+Strata serves **Qwen3.8-Flash-Next** — a 125B-parameter MoE — from one consumer NVIDIA card
+plus system RAM, exposing OpenAI-, Responses- and Anthropic-compatible APIs on `:8080`, so any
+existing client or coding agent can point at it.
+
+The **IMAGE** is `opencharly/pod-strata`'s `box/strata`. The **ENGINE** is
+`opencharly/layer-strata`'s `strata` candy: upstream's published Terminal and engine
+component, installed at a pinned release and never compiled on your machine or on the first
+start. This skill is the deployment surface; `/charly-strata:strata-layer` is the bake.
+
+## The pod contract — the substrate is the point
+
+A GPU **pod** does not own its driver. The kernel module is host-global, so the driver
+user-space is injected per container by the runtime from the NVIDIA container toolkit's CDI
+spec (`/etc/cdi/nvidia.yaml`, generated on the host by `nvidia-ctk cdi generate`).
+
+So this box is `base: pod-cdi.pod-cdi`, and `opencharly/pod-cdi`'s `layer-cdi` enforces the
+rule from the artifact's own side: its plan steps FAIL the build when a host-coupled driver
+library or an `nvidia*` binary is baked in (`cdi-no-baked-driver-libs`,
+`cdi-no-baked-driver-binaries`).
+
+**Nothing from `layer-nvidia` may be composed here.** That candy is the VM contract: the guest
+owns its kernel and must bake the driver. It belongs to `opencharly/vm-nvidia`. An image that
+bakes the driver user-space does not merely duplicate the host's — it shadows it, and
+`nvidia-smi` dies with *Driver/library version mismatch* on any host whose kernel driver is
+older than the distro package.
+
+## Box properties
+
+| Property | Value |
+|---|---|
+| Repo | `opencharly/pod-strata` (`box/strata`) |
+| Base | `pod-cdi.pod-cdi` — the CDI pod base, driver injected, nothing nvidia-baked |
+| Candy | `@github.com/opencharly/layer-strata/candy/strata:<tag>` — the engine layer |
+| Platforms | `linux/amd64` (the release's engine components are x86_64) |
+| Port | `8080` (inherited from the candy; the box declares no `port:`) |
+| Volume | `strata-data` → `/data` — the model store, a **host bind** on the deployment |
+| Secret | `API_KEY`, declared `secret_require` by the layer — `charly config` mints it if you store none |
+| Bed | `check-strata-gpu-pod` — the family's ONLY witness, `disposable: true`, on demand |
+
+## What it serves
+
+| Client API | Base URL | Endpoint |
+|---|---|---|
+| OpenAI Chat Completions | `http://127.0.0.1:8080/v1` | `POST /v1/chat/completions` |
+| OpenAI Responses | `http://127.0.0.1:8080/v1` | `POST /v1/responses` |
+| Anthropic Messages | `http://127.0.0.1:8080` | `POST /v1/messages` |
+| model list / health | `http://127.0.0.1:8080` | `GET /v1/models` (keyed), `GET /health` (unkeyed) |
+
+`GET /health` answers **before** the API-key gate, so a liveness probe needs no secret; it is
+the projection the bed reads. `GET /v1/models` needs the key and is what upstream's own
+container healthcheck calls — it is healthy only when the server answers *and* a model is
+loaded, so during the first download or load the container is *starting*, not *unhealthy*.
+
+## Deploy it
+
+```bash
+# from a checkout of this repo
+charly box build strata          # builds the pod image, tagged ghcr.io/opencharly/strata:<CalVer>
+
+# deploy it as a pod on a host whose CDI spec exists and whose driver the release supports
+charly config strata --bind strata-data    # records the host store path (see below)
+charly start strata
+charly status strata
+```
+
+The deploy entry supplies the GPU device through CDI (`nvidia.com/gpu=all`) — that is the base's
+contract, not a per-deployment flag — and binds the model store:
+
+```yaml
+strata:
+  pod:
+    image: strata
+    env:
+      FAMILY: qwen
+      MODEL: IQ2_XS
+      MODEL_PATH: /models                       # shards you already staged (see below)
+      CONTEXT: "65536"
+    volume:
+      - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
+      - {name: gguf,        type: bind, host: ~/.local/share/strata/models/IQ2_XS, path: /models}
+```
+
+No `secret:` entry: the LAYER declares `API_KEY` as `secret_require`, so `charly config` mints a
+value for it. A deploy-level entry would be a second declaration of the same secret — and one whose
+name has no stored value injects nothing at all.
+
+`~/.local/share/strata` is the committed default because it is `$XDG_DATA_HOME`'s default; charly
+expands `~`/`$HOME` and **not** `$XDG_*` (`opencharly/spec#260`), so a relocated
+`XDG_DATA_HOME` is written as a literal path.
+
+## The env surface
+
+Everything is the deployment's `env:`. The names are **upstream's own** — nothing is renamed by
+charly — and the candy's `var:` carries the family's defaults.
+
+| Variable | Default (engine) | What it does |
+|---|---|---|
+| `FAMILY` | `qwen` | which upstream family this model belongs to (also selects the picture reader) |
+| `MODEL` | `IQ2_XS` | the size to install on a FRESH store; ignored once settings exist |
+| `MODEL_PATH` | empty | shards you already have: one folder or one `.gguf`, **inside** the container. The pre-v0.2.16 `GGUF_DIR` alias is still accepted upstream and is emitted nowhere here |
+| `CONTEXT` | `65536` | context window (`32k`/`64k`/`128k`/`256k` or a number). The family chooses 64K for agent clients; upstream recommends less on a ≤16.5 GB card |
+| `PARALLEL` | fitted to the card | requests answered at the same time, 1-8 |
+| `VISION` | `cpu` | pictures: `off`, `on`, `gpu`, `cpu`. **Upstream's own default is `off`; the family's is on**, read on the CPU so it takes nothing from the card |
+| `KV` | `int8` | conversation-memory format: `int8`, `q4_0` (half the memory), `k8v4`, `fp16` |
+| `DRAFTING` | `auto` | which drafter guesses ahead: `auto`, `mtp`, `dflash2`, `off` |
+| `DRAFT_VOCAB` | from the container's languages | which tokens the drafter may guess: `cjk`, `en`, `cyrillic`, `fr`, `latin` |
+| `GPU` / `GPUS` | all that fit | card numbers as the monitor lists them (`0`, `0,1`); empty or `all` = the engine's choice |
+| `GPU_ROLES` | none | a role per card (`1=main,0=helper`); never together with `GPU`/`GPUS` |
+| `TUNE` | `skip` | `quick`/`thorough` tune ONCE per preset (up to ~20/120 minutes) and keep the result; `RETUNE=1` tunes again |
+| `PORT` | `8080` | the port inside the container |
+| `PRESET` | `docker` | the preset name in `/data`; settings are saved into it |
+| `STRATA_SET` | none | advanced engine settings, space separated `KEY=VALUE` |
+| `API_KEY` / `API_KEY_FILE` | minted | the key clients must send; the file form is for Docker secrets (see below) |
+| `ALLOW_DOWNLOAD` | off | `1`: go on and download although model files of the OLDER layout sit in `/data/models` |
+
+**Gone, and emitted nowhere here.** Two different retirements, and conflating them is a claim
+that would be false: `STRATA_RUN_ARGS` and `STRATA_OVERLAY_JSON` were NEVER upstream's — they were
+charly's own runtime surface (a second implementation of upstream's config, including the vision
+pass), deleted with the entrypoint that implemented them; the VRAM reserve and the extra engine
+argv they carried are now *setup* choices (`STRATA_SET`, `TUNE`, `CONTEXT`). `HOST`, `LOW_RAM`,
+`LAYER_SPLIT`, `REINSTALL`, `KV_STREAMING`, `RESIDENT_BUDGET_GIB` and `CONFIG` are upstream's
+older-image names, which the v0.2.16 entrypoint warns about and ignores. One further consequence
+worth knowing: the
+container no longer honours a memory cap of its own — upstream plans from the host's RAM and
+warns when `/sys/fs/cgroup/memory.max` is set.
+
+## The model store
+
+`/data` is the operator's host directory, bind-mounted. Upstream writes everything under it and
+the image holds only the engine and the Terminal, so updating the image never touches your files:
+
+| Path | What |
+|---|---|
+| `Strata-data/models/<model>/` | the GGUF shards |
+| `Strata-data/packs/<model>/` | the prepared pack (tens of GB; built once) |
+| `Strata-data/mtp/` | the drafter layer |
+| `state/` | the preset, the tuning result, and the API key (`state/api-key`) |
+| `install/` | the run settings and the logs |
+| `home/` | `HOME` inside the container |
+
+The pre-v0.2.16 store (`/data/models`, `/data/packs`, `/data/mtp`) is **migrated by upstream's
+own entrypoint** on the first start: a rename inside the volume, no copy and no re-download,
+skipping any target that already exists. A folder that is its own bind mount is never touched —
+which is why the bed names the shards at the POST-migration path
+(`MODEL_PATH: /data/Strata-data/models/IQ2_XS`) on the one `/data` bind, and relies on the move
+having run before the entrypoint validates the path.
+
+Budget ~80 GB of disk for a 60 GB-class model, ~6 GB for the drafter layer, ~0.9 GB for the
+picture reader. `charly volume list` / `charly volume reset` apply only to NAMED volumes; a
+bind-mounted store is reset with the filesystem, deliberately.
+
+## The API key rule
+
+Upstream refuses to serve beyond loopback **without** a key, so a key is always on — which is why the
+layer declares it `secret_require` rather than `secret_accept`: an accepted name with no value in
+the credential store injects NOTHING (measured: no secret, no environment variable, no warning), so
+it would describe a keyless posture that cannot exist and then silently serve whatever upstream
+minted.
+
+- **`charly config strata` mints one** when none is stored (a 32-byte token), and the unit carries
+  `Secret=<name>-api-key,type=env,target=API_KEY`.
+- **Yours wins** if it is stored first: `charly secrets set charly/secret/API_KEY "$(openssl rand
+  -hex 24)"` (16 characters or more; upstream warns in its log when the key is short).
+- **Read it** with `charly secrets list`, or the `Secrets:` line of `charly status strata`.
+  Upstream's own minted key lives at `/data/state/api-key` and is shown by
+  `charly shell strata -c 'strata launch --show-key --preset docker'` — the path taken only when the
+  engine is started with no key at all.
+
+Every `/v1/*` request carries `Authorization: Bearer <key>`. `GET /health` is the one route
+answered without it, by design. The layer's `strata-api-gate` probe asserts exactly that pair (401
+without a key, 200 with it), so the posture is tested once, by the entity that owns it.
+
+`API_KEY` is upstream's own name, and the cutover that created this repo turned on exactly that:
+the pre-v0.2.16 family used `STRATA_API_KEY` and projected it to `API_KEY` inside a
+charly-authored entrypoint, and that entrypoint is gone with the rest of charly's re-implementation
+of upstream's runtime (R2: one implementation of the runtime contract, and it is upstream's).
+
+## Run the bed
+
+`check-strata-gpu-pod` is the family's ONLY witness and it needs the GPU venue plus a provisioned
+model store, so it is **excluded from the umbrella's default roster** and run on demand:
+
+```bash
+charly check run check-strata-gpu-pod        # from this repo
+charly check run strata.check-strata-gpu-pod # from the umbrella, namespace-qualified
+```
+
+It is a `pod:` deploy of `image: strata` with `disposable: true`, `lifecycle: dev` and
+`requires_shared: [nvidia-gpu]` — the REFCOUNTED axis, which flips the IOMMU group
+vfio→nvidia+CDI at deploy and back only when the last claimant releases. (`requires_exclusive`
+is the VM/sole-use axis and asks for the flip *to* vfio; on the family's own bed it made the
+arbiter try a vfio switch that a live desktop session correctly refused.)
+
+What it proves, in order: `/health` publishes the context this deployment asked for (a literal
+above the engine's own recommendation for the card, so the assertion can actually fail) **and**
+`images: true` — with no vision variable in the bed's `env:`, so what it reads is the CANDY's
+default and a pinned variable cannot make it pass; the engine is loaded, not merely listening
+(`loaded` is the server's own answer, which separates the HTTP listener from the weights being in
+memory); a real PNG round-trips through the encoder and the answer names the colour; and the
+Terminal reports the build this repo pins, executing as **container uid 0 — the mapped host user** —
+because a CDI-device unit is emitted `userns=host` / `User=0:0` and under `userns=host` a rootless
+container's uid 0 IS the invoking host user (a file it creates in the bind lands on the host as
+1000:1000, and `podman info` still reports `rootless=true`).
+
+The engine LAYER's own `check:` steps cover what a build context can see —
+`strata-terminal-version`, `strata-engine-component` (upstream's own signature verifier),
+`strata-vision-binary`, `strata-container-scripts` — plus the deploy-context ones it can make
+safely (`strata-health`, `strata-engine-usable`, `strata-projection`, `strata-api-gate`,
+`strata-completion`). The engine-versus-card comparison lives in the bed because it RUNS the
+component, which needs the device CDI injects. The box itself declares no `plan:`: every one of
+those assertions already belongs to the candy that owns the surface (R2).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| the container exits 3 at the start with *the engine in this image does not match this computer's graphics card* | the card is not visible to the container, or the component is for another card | check that the host's CDI spec exists (`nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`) and that the pod is granted the device |
+| `strata` reports a driver older than the engine needs | the release's CUDA-13 component needs driver 580 or newer | update the host driver, or pin a CUDA-12 component |
+| the driver's user-space is in the image | something composed `layer-nvidia` | remove it — `layer-cdi`'s build steps will fail the build, and its assertions name the file |
+| `/health` says `"images": false` | `VISION` is `off`, or the family ships no reader | set `VISION: cpu`; for a community fine-tune name its reader explicitly |
+| a completion returns `content: null` | the model spent the budget thinking | send `reasoning_effort: none` and a `max_tokens` above ~16 |
+| `MODEL_PATH=… is not in the container` | the folder was never mounted, or names a parent folder | mount the folder that holds the shards directly and name *that* in `MODEL_PATH` |
+| the start says model files of the older layout were left unread | a mounted `/data/models` (its own mount, so not migrated) | name the folder in `MODEL_PATH`, or let upstream migrate an unmounted store |
+| killed under a memory cap | upstream plans from the host's RAM (`/proc/meminfo`) | raise or remove the container's memory limit; upstream warns when one is set |
+
+## Related
+
+- `/charly-strata:strata-layer` — the ENGINE layer: the artifact pins, the install, the service,
+  the env defaults. Read it before changing `candy/strata` (which lives in
+  `opencharly/layer-strata`, not here).
+- `/charly-strata:strata-cli` — the host-side `charly strata` management CLI over HTTP.
+- `/charly-pod:pod` — the `kind: pod` / deploy schema this bed uses.
+- `/charly-check:check` — `charly check run`, `disposable: true` beds, and the R10 gate.
+- `/charly-internals:disposable` — what `disposable: true` authorizes, and `requires_shared`.
+- `/charly-distros:cachyos` — the base distro the pod contract's image derives from.

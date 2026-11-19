@@ -192,8 +192,10 @@ a literal above what upstream recommends for the card, so the assertion can fail
 `images: true` with no vision variable in the bed's `env:`, which is what makes pictures the
 LAYER's default rather than a value the bed imposed; the engine is **loaded**, not merely
 listening, which separates "the HTTP server answers" from "the weights are in memory"; a real PNG
-round-trips through the encoder and the answer names the colour; and the Terminal runs as uid 1000
-and reports the build the image pins (`strata 0.2.16`, `build 0.1.62`).
+round-trips through the encoder and the answer names the colour; and the Terminal reports the build
+the image pins (`strata 0.2.16`, `build 0.1.62`), executing as **container uid 0 — the mapped host
+user**, since a CDI-device unit runs with `userns=host` / `User=0:0` and there uid 0 is the invoking
+host user, not a root escalation.
 
 `charly box build strata` proves the other half: the image composes, and it carries no driver
 user-space — `layer-cdi`'s own steps check that in the build.

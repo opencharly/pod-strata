@@ -209,7 +209,10 @@ above the engine's own recommendation for the card, so the assertion can actuall
 default and a pinned variable cannot make it pass; the engine is loaded, not merely listening
 (`loaded` is the server's own answer, which separates the HTTP listener from the weights being in
 memory); a real PNG round-trips through the encoder and the answer names the colour; and the
-Terminal executes as uid 1000 and reports the build this repo pins.
+Terminal reports the build this repo pins, executing as **container uid 0 — the mapped host user** —
+because a CDI-device unit is emitted `userns=host` / `User=0:0` and under `userns=host` a rootless
+container's uid 0 IS the invoking host user (a file it creates in the bind lands on the host as
+1000:1000, and `podman info` still reports `rootless=true`).
 
 The engine LAYER's own `check:` steps cover what a build context can see —
 `strata-terminal-version`, `strata-engine-component` (upstream's own signature verifier),

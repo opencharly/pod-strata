@@ -12,7 +12,7 @@ to hold (the local `pod-cdi/` checkout was behind its remote when this leg start
 | 1 | `opencharly/pod-cdi` **`v2026.323.1302`** (newest merged) | that tag | `layer-cdi:v2026.323.0302`, `layer-agent-forwarding:v2026.274.0608`, namespace `distro-arch:v2026.274.1256` |
 | 2 | `opencharly/layer-cdi` **`v2026.323.0302`** | that tag | `layer-cuda:v2026.323.0252` — and nothing else |
 | 3 | `opencharly/layer-cuda` **`v2026.323.0252`** (newest tag) | that tag | `layer-ffmpeg:v2026.272.0056` — **no `layer-nvidia`**, deliberately |
-| 4 | `opencharly/layer-strata`'s `candy/strata` **`T1`** (not yet tagged) | the cutover branch | `layer-cdi:v2026.323.1259` — **no `layer-nvidia`, no `layer-cuda`** |
+| 4 | `opencharly/layer-strata`'s `candy/strata` **`v2026.323.1751`** (`T1`; peels to `b61201d052cdc41690c377b78dea6a90874594e0`, merged 2026-11-19T17:51:55Z) | that tag | `layer-cdi:v2026.323.1259` — **no `layer-nvidia`, no `layer-cuda`** |
 
 A POD image therefore gets its driver from the host (CDI) and its toolkit from `layer-cuda`, and
 no hop in the chain names the VM contract's driver user-space.
@@ -94,7 +94,7 @@ v2026.323.0252
 
 ## 5 — the strata candy's own `layer-cuda` pin
 
-### 5a. TODAY (the newest MERGED layer-strata tag, `v2026.320.2149`) — it disagrees, twice
+### 5a. BEFORE the upgrade (`v2026.320.2149`, the tag the family published before `T1`) — it disagreed, twice
 
 ```
 $ gh api repos/opencharly/layer-strata/contents/candy/strata/charly.yml?ref=v2026.320.2149 \
@@ -110,7 +110,7 @@ Two disagreements with the chain of §1–§4, and only one of them is about a t
 - `layer-cuda:v2026.320.2103` ≠ the chain's `v2026.323.0252` — **a second pin of the same candy at
   a different tag in one closure**. That is the case this file exists to name.
 - `layer-nvidia:v2026.320.1938` is composed at all. That is not a skew, it is the VM contract
-  entering a pod, and it is what `T1` deletes (ledger D-2).
+  entering a pod, and it is what `T1` deleted (ledger D-2).
 
 ### 5b. What the resolution actually does with a skew — MEASURED, not assumed
 
@@ -147,20 +147,35 @@ nvidia.v2026.320.1938
 So the skew does not stop the build, and the SILENT version is the dangerous one: the winner is
 whoever's tag sorts newest, and `charly#1179` records the case where a stale SHA won the
 comparison outright. What a pin chain must therefore prove is not "the loader will refuse" but
-"no second pin exists", which is what `T1` delivers (§5c).
+"no second pin exists", which is what the pinned tag `v2026.323.1751` delivers (§5c).
 
-### 5c. AFTER `T1` — the candy names `layer-cdi` and nothing else GPU
+### 5c. AS PINNED by `v2026.323.1751` — the candy names `layer-cdi` and nothing else GPU
 
-Read from the cutover branch's COMMITTED tree (`feat/strata-v0216`, head `e02b990`, "feat(strata)!:
-install Strata v0.2.16's released artifacts and run upstream's entrypoint"):
+The tag exists, and it is MERGED — the two facts AGENTS.md Part II #3 requires of a pin, read from
+the remote and from a clone of the repo:
 
 ```
-$ git -C .worktrees/strata-pod/layer-strata rev-parse --short HEAD
-e02b990
-$ git -C .worktrees/strata-pod/layer-strata show e02b990:candy/strata/charly.yml \
-    | grep -n "@github.com/opencharly"
+$ git ls-remote https://github.com/opencharly/layer-strata.git refs/tags/v2026.323.1751
+b61201d052cdc41690c377b78dea6a90874594e0	refs/tags/v2026.323.1751
+$ git -C <layer-strata clone> fetch origin main
+$ git -C <layer-strata clone> merge-base --is-ancestor b61201d052cdc41690c377b78dea6a90874594e0 origin/main
+$ echo "ancestor_rc=$?"
+ancestor_rc=0
+$ git -C <layer-strata clone> show v2026.323.1751:candy/strata/charly.yml \
+    | grep -n "@github.com/opencharly\|STRATA_VERSION\|STRATA_ENGINE_VERSION"
 72:            - '@github.com/opencharly/layer-supervisord:v2026.314.0710'
 83:            - '@github.com/opencharly/layer-cdi:v2026.323.1259'
+89:            STRATA_VERSION: v0.2.16
+92:            STRATA_ENGINE_VERSION: 0.1.62
+```
+
+`ancestor_rc=0` is what makes it a PIN and not a tag standing beside `main`. The box that tag carries
+is the one this repo mirrors — read at the same tag:
+
+```
+$ git -C <layer-strata clone> show v2026.323.1751:box/strata/charly.yml | grep -n 'base:\|security_opt'
+21:        base: pod-cdi.pod-cdi
+49:            security_opt:
 ```
 
 Its own comment states the reason for the tag it names: *"v2026.323.1259 is a merged release whose
@@ -181,7 +196,7 @@ v2026.323.0302
 v2026.323.1259
 ```
 
-So after `T1`: the candy names `layer-cdi:v2026.323.1259`; both `layer-cdi` tags in the closure
+So, as pinned: the candy names `layer-cdi:v2026.323.1259`; both `layer-cdi` tags in the closure
 (§2's `0302` from the base, `1259` from the candy) resolve `layer-cuda:v2026.323.0252`; and
 **`layer-cuda` is pinned once, at one tag, by a single layer**. Measured proxy for exactly that
 closure (a box on the `pod-cdi` base that additionally names the candy's `layer-cdi`):
@@ -197,14 +212,29 @@ cuda.v2026.323.0252
 
 Newest wins for `layer-cdi` (`1259` > `0302`), no notice printed, no `nvidia` stage at all.
 
-### 5d. The one skew `T1` still leaves — NAMED, not hidden
+### 5d. The one skew the pinned closure carries — NAMED, MEASURED, and owned elsewhere
 
-The base pins `layer-cdi:v2026.323.0302` and the candy requires `layer-cdi:v2026.323.1259`: the
-same candy at two tags, in two different box scopes. It resolves to `1259` (measured in §5c) and
-both tags name the SAME `layer-cuda`, so the image that gets built is coherent either way. It is
-still a skew, and it belongs to `pod-cdi` (its own PR, advancing its `layer-cdi` pin to the newest
-merged tag) — never to a hand-pin here, and never to a branch checkout. Raised in `HANDOFF.md` as
-an open item with the exact command that closes it.
+The base pins `layer-cdi:v2026.323.0302` and the candy requires `layer-cdi:v2026.323.1259`: the same
+candy at two tags, in two different box scopes. It resolves to `1259` (measured in §5c) and both
+tags name the SAME `layer-cuda:v2026.323.0252`, so the image that gets built is coherent either way.
+
+**Measured harmless, not argued.** The composition's own bed ran on exactly this closure — twice:
+
+- `check-strata-gpu-pod`, calver **`2026.323.1728`** (the producer's run): PASS, `steps=16`,
+  `skipped_checks=12`, diagnostics `{errors 0, warnings 0, advisories 0}`, all 15 strata probes PASS,
+  including `strata-engine-component` (upstream's own verifier: usable, signed, `0.1.62`, cuda13)
+  and `strata-engine-usable` against the CDI-injected driver;
+- the SAME bed in THIS repo, calver **`2026.323.1759`**: PASS, `steps=16`, `bed_rc=0`, with all four
+  of this repo's own assertions PASS (`strata-gpu-projection`, `strata-gpu-loaded`,
+  `strata-gpu-vision-roundtrip`, `strata-gpu-terminal`) — pasted in the PR body's `## How tested`.
+
+The resolver settles the skew on the direct candy list; the bed is what proves which `layer-cdi`
+actually landed.
+
+The fix is **not** here. It belongs to `pod-cdi` — filed as
+[`opencharly/pod-cdi#7`](https://github.com/opencharly/pod-cdi/issues/7) ("the base's own
+`layer-cdi` pin and a consumer's can disagree, and the resolver resolves it silently") — never to a
+hand-pin in this repo and never to a branch checkout.
 
 ## 6 — the staged repo proves its own composition
 
@@ -296,17 +326,23 @@ answer to the base change: the distro CHAIN is inherited across the namespace, t
 LIST is not (`box/strata/charly.yml` declares `build: [pac]` for that reason, and the reason is
 pasted there).
 
-The materialized candy set at the CURRENT (pre-`T1`) pin — this is the evidence that `T1` is
-required before this repo can build, because the driver user-space is in the tree:
+The materialized candy set **as pinned** — the tree this repo ships. No `nvidia` stage appears
+anywhere: the VM contract's driver user-space is not in the closure.
 
 ```
-$ ls .build/_candy/
-agent-forwarding.v2026.274.0608   gnupg.v2026.272.0138      strata.v2026.320.2149
-arch-aur-test                     nodejs.v2026.272.0322     supervisord.v2026.314.0710
-arch-pac-test                     nvidia.v2026.320.1938     yay.v2026.272.0425
-build-toolchain.v2026.314.0704    pixi.v2026.272.0440
-cdi.v2026.323.0302                ssh-client.v2026.272.0430
-cuda.v2026.323.0252               direnv.v2026.272.0057  ffmpeg.v2026.272.0056
+$ ls .build/_candy/ | grep -E 'strata|cdi|cuda|nvidia'
+cdi.v2026.323.1259
+cuda.v2026.323.0252
+strata.v2026.323.1751
+```
+
+For contrast, the PRE-upgrade pin (`v2026.320.2149`) composed the driver user-space — which is
+exactly what `T1` was required to delete, and why no build of this box was attempted at that tag:
+
+```
+$ ls .build/_candy/ | grep -E 'cuda|nvidia'          # at the pre-upgrade pin, measured earlier
+cuda.v2026.323.0252
+nvidia.v2026.320.1938
 ```
 
 `nvidia.v2026.320.1938` is exactly the stage `layer-cdi`'s `cdi-no-baked-driver-libs` /
@@ -320,13 +356,15 @@ Two pins, both in this repo, both `@github` refs, both MERGED TAGS:
 | File | Line | Value |
 |---|---|---|
 | `charly.yml` (root) | `import:` → `pod-cdi:` | `'@github.com/opencharly/pod-cdi:v2026.323.1302'` |
-| `box/strata/charly.yml` | `candy:` | `'@github.com/opencharly/layer-strata/candy/strata:<T1>'` |
+| `box/strata/charly.yml` | `candy:` | `'@github.com/opencharly/layer-strata/candy/strata:v2026.323.1751'` |
 
-`<T1>` is the merge tag of `layer-strata`'s v0.2.16 PR (ledger plan step 1) — the tag whose candy
-names `layer-cdi:v2026.323.1259` and no `layer-nvidia`. Before writing it, re-read `pod-cdi`'s
-newest merged tag (§1's command): if it moved, take the new tag AND re-run §2–§4 against it, because
-a newer `pod-cdi` may name a different `layer-cdi` and therefore a different `layer-cuda`.
+`v2026.323.1751` is the merge tag of `layer-strata`'s v0.2.16 PR (ledger plan step 1,
+`opencharly/layer-strata#24`, merged 2026-11-19T17:51:55Z) — the tag whose candy names
+`layer-cdi:v2026.323.1259` and no `layer-nvidia`, proven at the tag in §5c. When it is advanced,
+re-read `pod-cdi`'s newest merged tag too (§1's command): a newer `pod-cdi` may name a different
+`layer-cdi` and therefore a different `layer-cuda`, and this file's §2–§4 must be re-run against it.
 
 Nothing else in this repo is pinned by hand. The bed's `image: strata` is a local box name, and its
-assertions carry literals (`65536`, `strata 0.2.16`, `build 0.1.62`) that belong to the candy's
-`env:`/`var:` — they move with `T1`, not with a pin here.
+assertions carry literals (`65536`, `strata 0.2.16`, `build 0.1.62`, container `uid 0`) that belong
+to the candy's `env:`/`var:` and to the substrate's mapping — they move with the candy's tag, not
+with a pin here.

@@ -90,7 +90,10 @@ strata:
             # (`plugin-qdrant/candy/plugin-qdrant`).
             - '@github.com/opencharly/layer-strata/candy/strata:v2026.323.1751'
         # IN THIS REPO. The block below is inherited from opencharly/layer-strata's `box/strata` —
-        # the image it was measured on is the same image this box builds — and it is kept verbatim.
+        # the image it was measured on is the same image this box builds — with ONE correction: the
+        # producer's text said the workload "runs as uid 1000 under supervisord", while the executed
+        # proof is container uid 0 (the mapped host user under `userns=host`, see the block). The same
+        # correction is carried in the producer's own repo; everything else is their text.
         # The deploy side needs no change: a box-level `security:` is baked into the
         # `ai.opencharly.security` label (the emitted Containerfile carries
         # `{"security_opt":["no-new-privileges"]}`) and UNIONED onto the deploy's own args. Its
@@ -98,8 +101,10 @@ strata:
         # `security:` added AFTER a deploy exists only reaches `charly config` after
         # `charly deploy del` + `charly deploy add` — `AGENTS.md` says so where the operator reads it.
         security:
-            # The workload never needs to escalate: it runs as uid 1000 under supervisord and the GPU
-            # arrives as a CDI device, not as a privilege. Measured on this image with the CDI device
+            # The workload never needs to escalate: it runs as container uid 0 — the MAPPED HOST USER
+            # under `userns=host`, not a root escalation — and the GPU arrives as a CDI device, not as
+            # a privilege. A file it creates in the bind lands on the host as 1000:1000 and `podman
+            # info` reports `rootless=true`. Measured on this image with the CDI device
             # and a bind volume, under `--userns=host --user 0 --cap-drop ALL
             # --security-opt no-new-privileges`, the whole chain runs — supervisord, `strata` RUNNING,
             # `Engine 0.1.62 (cuda) is installed`, `components engine` `usable: true, signed: true`, the

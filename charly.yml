@@ -56,7 +56,13 @@ import:
     #   0
     # — and it composes `layer-cdi:v2026.323.0302`, which requires `layer-cuda:v2026.323.0252` and
     # nothing from `layer-nvidia`. The whole chain, command by command: `PIN-CHAIN.md`.
-    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.323.1302'
+    # The pin must also stay new enough that the imported namespace LOADS under the charly
+    # binary the umbrella pins. The floor was v2026.324.1644 (pod-cdi resolving distro-arch
+    # v2026.324.0908, which carries distro-arch#74 and nests `check-arch-vm`'s members inside
+    # the bed's venue); this pin is v2026.325.1329, the release that also stops the CDI base
+    # emitting the retired `COPY --from=<carrier> .agents/skills` step (opencharly/pod-cdi#10).
+    # At v2026.323.1302 the umbrella fails to load at all (opencharly/pod-kde-vnc#3 and #4).
+    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.325.1329'
 discover:
     - path: box
       recursive: true
@@ -128,6 +134,24 @@ check-strata-gpu-pod:
             # assertion can actually FAIL: on the venue's RTX 4080 SUPER (15.99 GB) the recommendation
             # is 32768.
             CONTEXT: "65536"
+            # The bed pins TWO engine settings for its own run, both measured, because the store it
+            # binds carries the OPERATOR's run settings:
+            #
+            #   idle-unload=0      a deployment that releases the model after five idle minutes
+            #                      (opencharly/layer-strata#26) makes this bed non-deterministic:
+            #                      between the vision probe's retries the model unloads and most
+            #                      attempts pay a cold load.
+            #   vram-reserve-mib=512  the picture path needs room to allocate. With the operator's
+            #                      reserve of 0 the card reports 13 MiB free at request time and the
+            #                      prefill GEMM dies:
+            #                        prefill gemm: cublasGemmEx f16: cuBLAS status 14
+            #                      after which supervisord restarts the engine (~60 s cycle, 35
+            #                      failed probe attempts over 30 minutes). 512 MiB is the figure the
+            #                      engine's own warning asks for on this card.
+            #
+            # A bed asserts behaviour, so it configures the venue the behaviour needs instead of
+            # racing the operator's deployment posture.
+            STRATA_SET: "idle-unload=0 vram-reserve-mib=512"
         volume:
             # The operator's model store, mounted at /data — the whole store, not a sub-folder: the
             # entrypoint's migration, the presets, the run settings, the packs, the encoder and the key

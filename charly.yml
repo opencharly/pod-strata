@@ -134,6 +134,13 @@ check-strata-gpu-pod:
             # assertion can actually FAIL: on the venue's RTX 4080 SUPER (15.99 GB) the recommendation
             # is 32768.
             CONTEXT: "65536"
+            # The bed pins the engine's idle release OFF for its own run. The store it binds carries
+            # the OPERATOR's run settings, and a deployment that releases the model after five idle
+            # minutes (opencharly/layer-strata#26) makes this bed non-deterministic: between the
+            # vision probe's retries the model unloads, so most attempts pay a cold load and the
+            # round-trip fails on its own timeout rather than on the engine (measured: 31 attempts,
+            # 29m49s, exit=1). A bed asserts behaviour, so it keeps the model resident for the run.
+            STRATA_SET: "idle-unload=0"
         volume:
             # The operator's model store, mounted at /data — the whole store, not a sub-folder: the
             # entrypoint's migration, the presets, the run settings, the packs, the encoder and the key

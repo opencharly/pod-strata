@@ -61,7 +61,7 @@ import:
     # (the release carrying distro-arch#74, which nests `check-arch-vm`'s members inside the
     # bed's venue). At v2026.323.1302 the umbrella fails to load at all
     # (opencharly/pod-kde-vnc#3, same mechanism).
-    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.324.1644'
+    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.325.1329'
 discover:
     - path: box
       recursive: true

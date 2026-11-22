@@ -77,12 +77,11 @@ discover:
 # Re-diff it against their tree if the PR gains commits; their version wins and this copy is
 # replaced.
 #
-# Note what is NOT here: a `secret:`. The CANDY declares `API_KEY` as `secret_require`, and that is
-# where the keyed posture belongs — `charly config` mints a value for it and the unit carries
-# `Secret=<name>,type=env,target=API_KEY`. A deploy-level entry would be a second declaration of the
-# same secret, and (measured) one whose name has no stored value injects NOTHING: it would read as
-# "the keyed posture is under test" while testing the keyless branch. The bed therefore declares no
-# secret and lets the layer's `strata-api-gate` probe assert the gate.
+# Note what is NOT here: a `secret:`. The CANDY declares `API_KEY` as `secret_accept` (ledger `P10`
+# of opencharly/layer-strata), so the key is a POSTURE: with nothing stored nothing is injected, and
+# the deployment's `STRATA_NO_API_KEY` decides whether the launcher serves keyless. This bed declares
+# no secret and lets the layer's `strata-api-gate` probe assert whichever branch the host's credential
+# store puts it in; `check-strata-keyless-pod` below pins the keyless branch explicitly.
 #
 # It needs the GPU venue (`requires_shared: [nvidia-gpu]`, so the arbiter attaches the CDI device)
 # and a PROVISIONED model store, so a test bed never downloads 37-188 GB. It is deliberately NOT in
@@ -157,11 +156,11 @@ check-strata-gpu-pod:
             # entrypoint's migration, the presets, the run settings, the packs, the encoder and the key
             # all live under it, and a candy can never pin a host path (`~` is expanded by charly).
             - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
-        # No `secret:` entry here on purpose. `API_KEY` is declared `secret_require` by the CANDY, which
-        # is where the keyed posture belongs: `charly config` mints a value for it and the unit carries
-        # `Secret=<name>,type=env,target=API_KEY`. A deploy-level entry would be a second declaration of
-        # the same secret, and (measured) one whose name has no stored value injects NOTHING — it would
-        # read as "the keyed posture is under test" while testing the keyless branch.
+        # No `secret:` entry here on purpose. `API_KEY` is `secret_accept` in the CANDY (ledger `P10`),
+        # so this bed's posture is whatever the host's credential store yields: a stored key is
+        # injected and `strata-api-gate` asserts the 401/200 branch; with none stored the launcher mints
+        # its own (or serves keyless when `STRATA_NO_API_KEY=1`). A deploy-level `secret:` would be a
+        # second declaration of the same credential.
         # VENUE PRECONDITION: this bed names a specific venue and never downloads WEIGHTS. The store must
         # already hold the model's shards (IQ2_XS: two .gguf files, ~66 GB) — a host with the card but an
         # empty store cannot run it. Stating it here because "run on demand" otherwise reads as
@@ -248,3 +247,61 @@ check-strata-gpu-pod:
                   ok = (out.startswith("strata 0.2.16") and "build 0.1.62" in out and os.getuid() == 0)
                   sys.exit(0 if ok else 1)
                   PY
+
+# check-strata-keyless-pod — the KEYLESS posture's witness (opencharly/layer-strata#27).
+#
+# The same image, the same provisioned store and the same GPU venue as `check-strata-gpu-pod`; the
+# ONE difference is the posture the change under test adds. The key is not a secret this image
+# requires any more (the candy declares `secret_accept`), and `STRATA_NO_API_KEY: "1"` makes the
+# launcher serve without one — upstream's own warned posture beside `--access lan`.
+#
+# It declares ONE step of its own — the posture itself, which no inherited probe can prove — and
+# inherits the rest: the CANDY carries the runtime probes (`strata-health`, `strata-engine-usable`,
+# `strata-projection`, `strata-api-gate`, `strata-completion`). `strata-api-gate` BRANCHES on the key
+# actually in force and passes on either posture, so it cannot witness the keyless one; the
+# `strata-keyless-gate` step below asserts `/health` reports `api_key: false`, which FAILS on a
+# keyed deployment (without the candy's patch the launcher mints a key at `--access lan`).
+#
+# Run it with NO key in the host credential store (`charly secrets delete charly/secret API_KEY`):
+# a stored key is injected by `charly config` and would silently turn this into the keyed branch.
+#
+check-strata-keyless-pod:
+    pod:
+        image: strata
+        disposable: true
+        lifecycle: dev
+        requires_shared: [nvidia-gpu]
+        description: >-
+            The keyless posture: the launcher serves beside `--access lan` without an API key, `/health`
+            reports `api_key: false`, and `/v1/models` answers 200 anonymously while a completion still
+            round-trips. Needs the GPU venue and the provisioned store; run on demand, never in the
+            default roster.
+        env:
+            FAMILY: qwen
+            MODEL: IQ2_XS
+            MODEL_PATH: /data/Strata-data/models/IQ2_XS
+            CONTEXT: "65536"
+            # The same two engine settings the keyed bed pins, for the same measured reasons
+            # (idle-unload=0 keeps the model resident between probe retries; vram-reserve-mib=512 is
+            # what the engine's own warning asks for on this card).
+            STRATA_SET: "idle-unload=0 vram-reserve-mib=512"
+            # THE ARM: no key, upstream's launcher switch, through the candy's own name (ledger P10).
+            STRATA_NO_API_KEY: "1"
+        volume:
+            # The operator's store, exactly as the keyed bed binds it — the preset, the run settings
+            # and the prepared pack are what the probes read.
+            - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
+        plan:
+            # The posture, and ONLY the posture: `/health` publishes `api_key` as the server's own
+            # answer, so `false` is what a keyless deployment says and what a keyed one cannot.
+            # `strata-api-gate` (inherited from the candy) passes on either posture, which is why it
+            # is not enough here. The probe is the candy's helper (one implementation, R2).
+            - check: the deployment serves keyless — /health publishes api_key=false
+              id: strata-keyless-gate
+              context: [runtime]
+              timeout: 1900s
+              exit_status: 0
+              # A fresh store may still be loading; `eventually` is the poll-until-pass matcher.
+              eventually: "1800s"
+              retry_interval: "15s"
+              command: /opt/strata/terminal/python/bin/python3 /opt/strata/charly-probes.py health api_key=false

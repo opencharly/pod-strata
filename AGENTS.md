@@ -34,9 +34,11 @@ in `opencharly/layer-strata`), not here.
 ## The bed is the only witness
 
 `charly check run check-strata-gpu-pod` is this repo's acceptance gate: the REAL engine, on the
-GPU venue, loading a provisioned model store on a card that arrived through CDI. There is no
-second bed and no GPU-free substitute — a mock proves the harness, not the engine, and the family
-withdrew its mock bed for exactly that reason.
+GPU venue, loading a provisioned model store on a card that arrived through CDI.
+`check-strata-keyless-pod` is the SAME image and store with `STRATA_NO_API_KEY: "1"` — a second
+POSTURE, not a second implementation, and the only witness the keyless branch gets (ledger `P10` of
+opencharly/layer-strata). There is no GPU-free substitute — a mock proves the harness, not the
+engine, and the family withdrew its mock bed for exactly that reason.
 
 - It is `disposable: true`, `lifecycle: dev`, `requires_shared: [nvidia-gpu]`. The `disposable`
   flag is what authorizes the check runner to destroy and rebuild it unattended; `lifecycle` is

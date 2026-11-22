@@ -34,9 +34,11 @@ in `opencharly/layer-strata`), not here.
 ## The bed is the only witness
 
 `charly check run check-strata-gpu-pod` is this repo's acceptance gate: the REAL engine, on the
-GPU venue, loading a provisioned model store on a card that arrived through CDI. There is no
-second bed and no GPU-free substitute — a mock proves the harness, not the engine, and the family
-withdrew its mock bed for exactly that reason.
+GPU venue, loading a provisioned model store on a card that arrived through CDI.
+`check-strata-keyless-pod` is the SAME image and store with `STRATA_NO_API_KEY: "1"` — a second
+POSTURE, not a second implementation, and the only witness the keyless branch gets (ledger `P10` of
+opencharly/layer-strata). There is no GPU-free substitute — a mock proves the harness, not the
+engine, and the family withdrew its mock bed for exactly that reason.
 
 - It is `disposable: true`, `lifecycle: dev`, `requires_shared: [nvidia-gpu]`. The `disposable`
   flag is what authorizes the check runner to destroy and rebuild it unattended; `lifecycle` is
@@ -108,8 +110,13 @@ This is a property of the deploy state, not of this repo's manifest — the same
   pins at MERGED TAGS. A branch or SHA does not resolve for an `@github` candy ref
   (opencharly/charly#1201), and only a merged ref is a pin (AGENTS.md Part II #3).
 - The skill at `.agents/skills/strata/SKILL.md` is this repo's prose surface: its routing lives in
-  `box/strata/charly.yml`'s `strata-skill:` node, and the node carries **no** prose — an in-line
-  description that disagrees with the file is a hard generator error.
+  `box/strata/charly.yml`'s `strata-skill:` node, owned by the `strata-skills` candy declared INLINE
+  in the root `charly.yml` (an inline candy's source dir IS the repo root, which is where both the
+  collector and the build stage read the body) —
+  a node's `owner:` must name a candy defined in the SAME repo as its body (opencharly/sdk#611,
+  opencharly/layer-strata#28), and the box composes the engine candy from another repo. The
+  carrier installs the tree at `~/.agents/skills` and its ADE check proves it landed; the node
+  carries **no** prose — an in-line description that disagrees with the file is a hard error.
 
 ## Landing
 

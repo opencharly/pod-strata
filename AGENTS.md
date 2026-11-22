@@ -110,7 +110,9 @@ This is a property of the deploy state, not of this repo's manifest — the same
   pins at MERGED TAGS. A branch or SHA does not resolve for an `@github` candy ref
   (opencharly/charly#1201), and only a merged ref is a pin (AGENTS.md Part II #3).
 - The skill at `.agents/skills/strata/SKILL.md` is this repo's prose surface: its routing lives in
-  `box/strata/charly.yml`'s `strata-skill:` node, owned by the `candy/strata-skills` carrier —
+  `box/strata/charly.yml`'s `strata-skill:` node, owned by the `strata-skills` candy declared INLINE
+  in the root `charly.yml` (an inline candy's source dir IS the repo root, which is where both the
+  collector and the build stage read the body) —
   a node's `owner:` must name a candy defined in the SAME repo as its body (opencharly/sdk#611,
   opencharly/layer-strata#28), and the box composes the engine candy from another repo. The
   carrier installs the tree at `~/.agents/skills` and its ADE check proves it landed; the node

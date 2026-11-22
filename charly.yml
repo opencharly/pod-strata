@@ -67,6 +67,50 @@ discover:
     - path: box
       recursive: true
 
+#  opencharly/pod-strata — the skill-prose bundle for the Strata POD.
+#
+#  WHY THIS CANDY EXISTS (opencharly/sdk#611, opencharly/layer-strata#28): a `skill:` node's
+#  `owner:` must name a candy DEFINED IN THE SAME REPO as its body. The box composes the engine
+#  candy from opencharly/layer-strata — a foreign candy — so it cannot own that candy's prose: the
+#  collector resolves the body at the OWNER candy's repo root, and before this candy the node named
+#  `strata`, whose body was only ever found in layer-strata's tree by a duplicate that the v0.2.16
+#  cutover deleted. The pin bump to v2026.326.0119 surfaced it: `skill "strata": no body`.
+#
+#  This candy owns the node instead, and the body lives beside this manifest under
+#  `.agents/skills/strata/SKILL.md` (the Agent-Skills standard tree) — the one place the
+#  marketplace/docs generators and the `ai.opencharly.skill` label projection read.
+#
+#  THE CANDY CARRIES THE PROSE INTO THE IMAGE: composed into the box, it installs the tree at the
+#  uid-1000 account's `~/.agents/skills` — the location a harness running inside the image reads —
+#  and its ADE `check:` proves the install landed.
+strata-skills:
+    candy:
+        description: |
+            Skill-prose bundle for the Strata POD: owns the `strata` `skill:` entity (a sibling node
+            in box/strata/charly.yml) and carries its body under .agents/skills/strata/SKILL.md.
+            It exists because a `skill:` node's owner must be a candy defined in the SAME repo as
+            its body, and the box composes the engine candy from opencharly/layer-strata
+            (opencharly/sdk#611, opencharly/layer-strata#28).
+            Composed by the box; installs the tree at the uid-1000 account's ~/.agents/skills so a
+            harness in the image reads the same prose the label carries.
+        plan:
+            - run: install the skill tree at the uid-1000 account's Agent-Skills location
+              id: install-skill-tree
+              copy: .agents/skills
+              to: "${HOME}/.agents/skills"
+              run_as: "${USER}"
+              comment: the body the ai.opencharly.skill label projects, made readable in-image
+            - check: the skill body this candy carries is installed under the uid-1000 account's ~/.agents/skills
+              id: skill-bodies-installed
+              context:
+                - build
+              exit_status: 0
+              command: |
+                  set -eu
+                  H="$(awk -F: '$3 == 1000 { print $6 }' /etc/passwd)"
+                  test -n "$H"
+                  test -s "$H/.agents/skills/strata/SKILL.md"
+
 # check-strata-gpu-pod — the family's REAL-engine witness, and its ONLY bed.
 #
 # MOVED, not rewritten: this block is the text of the bed that lives in opencharly/layer-strata's

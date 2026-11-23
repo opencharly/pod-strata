@@ -314,6 +314,81 @@ check-strata-gpu-pod:
 # Run it with NO key in the host credential store (`charly secrets delete charly/secret API_KEY`):
 # a stored key is injected by `charly config` and would silently turn this into the keyed branch.
 #
+check-strata-idle-pod:
+    pod:
+        image: strata
+        disposable: true
+        lifecycle: dev
+        requires_shared: [nvidia-gpu]
+        description: >-
+            The CANDY's DEFAULT posture, proven on a disposable GPU pod: with NO `STRATA_SET` and NO
+            `VISION` in the env, the server must answer with pictures ON and the default context,
+            RELEASE the model after five idle minutes (`idle-unload=300`), and reload it on the next
+            request. Exists because `check-strata-gpu-pod` pins its own `STRATA_SET` for
+            determinism, so it can never prove the default (opencharly/layer-strata#32). Needs the
+            GPU venue and the pre-staged store; run on demand, never in the default roster.
+        env:
+            FAMILY: qwen
+            MODEL: IQ2_XS
+            MODEL_PATH: /data/Strata-data/models/IQ2_XS
+            CONTEXT: "65536"
+            # NO STRATA_SET: the candy's defaults are the SUBJECT of this bed.
+            # NO VISION: pictures must be ON by the candy's default, not by this bed.
+        volume:
+            - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
+        plan:
+            - check: /health reports pictures ON and the context the default names
+              id: strata-default-projection
+              context: [runtime]
+              timeout: 5500s
+              exit_status: 0
+              stdout:
+                - contains: '"images": true'
+                - contains: '"max_context": 65536'
+              command:
+                command: curl -sf http://localhost:8080/health
+                in_container: true
+            - check: the model is RELEASED after five idle minutes with no request
+              id: strata-default-idle-unload
+              context: [runtime]
+              timeout: 900s
+              exit_status: 0
+              stdout:
+                - contains: "RELEASED"
+              command:
+                command: |
+                  set -eu
+                  # A check step resolves only the runner's auto-exported variables, so the shell's
+                  # own SECONDS is DEAD here (measured: "assertion is DEAD ... SECONDS"). A bounded
+                  # counter says the same thing without a name the resolver owns.
+                  i=0
+                  while [ $i -lt 48 ]; do
+                    h=$(curl -sf http://localhost:8080/health || true)
+                    case "$h" in
+                      *'"loaded": false'*) echo "RELEASED within the idle window"; exit 0 ;;
+                    esac
+                    i=$((i + 1))
+                    sleep 10
+                  done
+                  echo "NOT released within 480s: $h"
+                  exit 1
+                in_container: true
+            - check: the next request reloads the model and is answered
+              id: strata-default-reload
+              context: [runtime]
+              timeout: 900s
+              exit_status: 0
+              stdout:
+                - contains: "RELOADED"
+              command:
+                command: |
+                  set -eu
+                  code=$(curl -s -o /dev/null -w '%{http_code}' -m 300 -X POST http://localhost:8080/v1/chat/completions \
+                    -H 'Content-Type: application/json' \
+                    -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"one word: ok"}],"max_tokens":4}')
+                  [ "$code" = "200" ] || { echo "completion answered $code"; exit 1; }
+                  curl -sf http://localhost:8080/health | grep -q '"loaded": true' && echo "RELOADED after a 200 completion"
+                in_container: true
 check-strata-keyless-pod:
     pod:
         image: strata

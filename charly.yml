@@ -322,9 +322,9 @@ check-strata-idle-pod:
         requires_shared: [nvidia-gpu]
         description: >-
             The CANDY's DEFAULT posture, proven on a disposable GPU pod: with NO `STRATA_SET` and NO
-            `VISION` in the env, the server must answer with pictures ON and the default context,
-            RELEASE the model after five idle minutes (`idle-unload=300`), and reload it on the next
-            request. Exists because `check-strata-gpu-pod` pins its own `STRATA_SET` for
+            `VISION` in the env, the server must answer with pictures ON by the candy's default and
+            the context this deployment asks for, RELEASE the model after five idle minutes
+            (`idle-unload=300`), and reload it on the next request. Exists because `check-strata-gpu-pod` pins its own `STRATA_SET` for
             determinism, so it can never prove the default (opencharly/layer-strata#32). Needs the
             GPU venue and the pre-staged store; run on demand, never in the default roster.
         env:

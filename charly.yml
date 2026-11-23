@@ -332,12 +332,16 @@ check-strata-idle-pod:
             MODEL: IQ2_XS
             MODEL_PATH: /data/Strata-data/models/IQ2_XS
             CONTEXT: "65536"
-            # NO STRATA_SET: the candy's defaults are the SUBJECT of this bed.
+            # NO STRATA_SET: the candy's defaults are the SUBJECT of this bed (idle-unload, reserve).
             # NO VISION: pictures must be ON by the candy's default, not by this bed.
+            # CONTEXT is a MODEL parameter this bed names (the store's preset carries the same
+            # value), so the projection assertion proves the request is honoured — NOT that the
+            # candy defaults the context; the default-proof claim is scoped to pictures and the
+            # two STRATA_SET values.
         volume:
             - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
         plan:
-            - check: /health reports pictures ON and the context the default names
+            - check: /health reports pictures ON — the CANDY's default — and the context this deployment asks for
               id: strata-default-projection
               context: [runtime]
               timeout: 5500s

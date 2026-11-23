@@ -59,10 +59,15 @@ import:
     # The pin must also stay new enough that the imported namespace LOADS under the charly
     # binary the umbrella pins. The floor was v2026.324.1644 (pod-cdi resolving distro-arch
     # v2026.324.0908, which carries distro-arch#74 and nests `check-arch-vm`'s members inside
-    # the bed's venue); this pin is v2026.325.1329, the release that also stops the CDI base
-    # emitting the retired `COPY --from=<carrier> .agents/skills` step (opencharly/pod-cdi#10).
+    # the bed's venue); this pin is v2026.326.1530, the release that ALSO resolves a
+    # post-cutover distro-arch (v2026.326.1455), because opencharly/spec#420 turned `aur`
+    # into a routed builder and a pre-cutover distro tree cannot load at all
+    # (`#CandyValue.build.1: conflicting values "pac" and "aur"`). v2026.325.1329 — the
+    # previous pin — resolves arch v2026.325.1112 and therefore fails that load; it is also
+    # the release that stopped the CDI base emitting the retired
+    # `COPY --from=<carrier> .agents/skills` step (opencharly/pod-cdi#10).
     # At v2026.323.1302 the umbrella fails to load at all (opencharly/pod-kde-vnc#3 and #4).
-    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.325.1329'
+    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.326.1530'
 discover:
     - path: box
       recursive: true

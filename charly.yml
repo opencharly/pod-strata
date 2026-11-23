@@ -341,12 +341,15 @@ check-strata-idle-pod:
         volume:
             - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
         plan:
-            - check: /health reports pictures ON — the CANDY's default — and the context this deployment asks for
+            - check: /health reports the model LOADED, pictures ON by the CANDY's default, and the context this deployment asks for
               id: strata-default-projection
               context: [runtime]
               timeout: 5500s
               exit_status: 0
+              # `"loaded": true` is the ANCHOR for the release step below: without it a server
+              # that never loaded would satisfy "loaded: false" at t=0 and prove nothing.
               stdout:
+                - contains: '"loaded": true'
                 - contains: '"images": true'
                 - contains: '"max_context": 65536'
               command:

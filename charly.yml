@@ -62,7 +62,7 @@ import:
     # the bed's venue); this pin is v2026.325.1329, the release that also stops the CDI base
     # emitting the retired `COPY --from=<carrier> .agents/skills` step (opencharly/pod-cdi#10).
     # At v2026.323.1302 the umbrella fails to load at all (opencharly/pod-kde-vnc#3 and #4).
-    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.325.1329'
+    - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.326.1530'
 discover:
     - path: box
       recursive: true

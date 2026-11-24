@@ -88,7 +88,7 @@ strata:
             # works for a repo whose discovered tree carries its candy at the repo root; the
             # subpath form is what pod-qdrant itself uses for a candy inside another repo
             # (`plugin-qdrant/candy/plugin-qdrant`).
-            - '@github.com/opencharly/layer-strata/candy/strata:v2026.327.2013'
+            - '@github.com/opencharly/layer-strata/candy/strata:v2026.328.0240'
             # This repo's OWN skill-prose carrier: the `strata` skill node's owner must be a candy
             # defined here (opencharly/sdk#611); it installs the body at ~/.agents/skills and
             # proves the install. Composed so the box's skill label actually carries the prose.

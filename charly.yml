@@ -247,9 +247,12 @@ check-strata-gpu-pod:
               timeout: 3700s
               exit_status: 0
               # `loaded` is the server's own answer to "is the engine up" (serve/server.py), so this
-              # separates "the HTTP server answers" from "the weights are in memory". With pictures on,
-              # upstream cannot lazy-load the model (its settings validator refuses the pair), so the
-              # load happens at container start and this step is the witness that it completed.
+              # separates "the HTTP server answers" from "the weights are in memory". The candy now
+              # DEFERS the model to the first request (lazy by default, layer-strata#33), so the
+              # load this step waits for is the one the composed `strata-completion` round-trip
+              # triggers; it asserts that load COMPLETES, not that it happens at container start.
+              # (Before layer-strata#33 the pair pictures+lazy was refused in the launcher, so the
+              # load happened at start — the ordering is now covered by `check-strata-idle-pod`.)
               eventually: "3600s"
               retry_interval: "30s"
               command: /opt/strata/terminal/python/bin/python3 /opt/strata/charly-probes.py health loaded=true
@@ -322,10 +325,11 @@ check-strata-idle-pod:
         requires_shared: [nvidia-gpu]
         description: >-
             The CANDY's DEFAULT posture, proven on a disposable GPU pod: with NO `STRATA_SET` and NO
-            `VISION` in the env, the server must answer with pictures ON by the candy's default and
-            the context this deployment asks for, RELEASE the model after five idle minutes
-            (`idle-unload=300`), and reload it on the next request. Exists because `check-strata-gpu-pod` pins its own `STRATA_SET` for
-            determinism, so it can never prove the default (opencharly/layer-strata#32). Needs the
+            `VISION` in the env, the server must start with the MODEL DEFERRED to the first request
+            (lazy by the candy's default, pictures ON), answer with pictures and the context this
+            deployment asks for, RELEASE the model after five idle minutes (`idle-unload=300`), and
+            reload it on the next request. Exists because `check-strata-gpu-pod` pins its own
+            `STRATA_SET` for determinism, so it can never prove the default (opencharly/layer-strata#32). Needs the
             GPU venue and the pre-staged store; run on demand, never in the default roster.
         env:
             FAMILY: qwen
@@ -341,19 +345,65 @@ check-strata-idle-pod:
         volume:
             - {name: strata-data, type: bind, host: ~/.local/share/strata, path: /data}
         plan:
-            - check: /health reports the model LOADED, pictures ON by the CANDY's default, and the context this deployment asks for
-              id: strata-default-projection
+            - check: the container started with the model DEFERRED — lazy by the CANDY's default — with pictures ON
+              id: strata-default-lazy-start
               context: [runtime]
-              timeout: 5500s
+              timeout: 600s
               exit_status: 0
-              # `"loaded": true` is the ANCHOR for the release step below: without it a server
-              # that never loaded would satisfy "loaded: false" at t=0 and prove nothing.
+              # WHY the server's OWN startup log and not `/health`'s `loaded`: the composed strata
+              # candy's plan runs a completion round-trip BEFORE this bed's steps, so the model is
+              # loaded in BOTH postures by now. WHY not an engine-process start-time delta either:
+              # the engine PROCESS starts at container start in both postures — lazy defers the
+              # MODEL, not the process (measured: the /proc delta is ~0 s with P11 applied too).
+              #
+              # The startup decision is written once, at start, and the log is append-only, so the
+              # LAST startup block IS this container's. Each posture has its own block opener — the
+              # eager `loading the vision encoder ...` / `loading the model (the first start takes a
+              # minute...` pair, or the lazy `vision encoder unloaded; it starts with the model` —
+              # and the lazy MODEL line is deliberately NOT an opener, because it sits INSIDE the
+              # lazy block. Slicing at the last opener therefore binds the assertion to this
+              # container: a run WITHOUT the lazy guard lands on an eager block and fails here
+              # instead of passing on an older lazy one (verified offline: the real log passes, the
+              # same log with an eager block appended last fails).
+              # The `stdout` matcher is the ONE line this command prints — the health JSON is
+              # `grep -q`'d in-command (a silent gate), so a matcher for its text can never be
+              # satisfied by the output (measured: the step failed on exactly that, with the
+              # behaviour itself green).
               stdout:
-                - contains: '"loaded": true'
-                - contains: '"images": true'
-                - contains: '"max_context": 65536'
+                - contains: "LAZY-START"
               command:
-                command: curl -sf http://localhost:8080/health
+                command: |
+                  set -eu
+                  log=/data/state/strata/runtime/launch-docker.server.log
+                  [ -f "$log" ] || { echo "no server log at $log"; exit 1; }
+                  block=/tmp/strata-startup-block.txt
+                  awk '/^loading the vision encoder \.\.\.$/ || /^vision encoder unloaded; it starts with the model/ || /^loading the model \(the first start takes a minute/ { buf = "" } { buf = buf $0 "\n" } END { printf "%s", buf }' "$log" > "$block"
+                  [ -s "$block" ] || { echo "no startup block found in $log"; exit 1; }
+                  grep -q '^vision encoder unloaded; it starts with the model' "$block" || { echo "the vision encoder was LOADED at start — the pair was not lazy"; exit 1; }
+                  grep -q '^model unloaded; the first request loads it' "$block" || { echo "the model was not deferred to the first request"; exit 1; }
+                  grep -q 'the model unloads after 300.0 s without requests' "$block" || { echo "the candy's five-minute idle window is not in force at start"; exit 1; }
+                  grep -q 'images on' "$block" || { echo "the server did not start with pictures ON"; exit 1; }
+                  if grep -q 'loading the model (the first start takes a minute' "$block"; then
+                    echo "the model was loaded AT START — lazy was not applied"; exit 1
+                  fi
+                  curl -sf http://localhost:8080/health | grep -q '"images": true'
+                  echo "LAZY-START (the model waited for the first request, pictures ON)"
+                in_container: true
+            - check: the FIRST request loads the model and is answered
+              id: strata-default-first-load
+              context: [runtime]
+              timeout: 900s
+              exit_status: 0
+              stdout:
+                - contains: "LOADED-ON-DEMAND"
+              command:
+                command: |
+                  set -eu
+                  code=$(curl -s -o /dev/null -w '%{http_code}' -m 600 -X POST http://localhost:8080/v1/chat/completions \
+                    -H 'Content-Type: application/json' \
+                    -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"one word: ok"}],"max_tokens":4}')
+                  [ "$code" = "200" ] || { echo "completion answered $code"; exit 1; }
+                  curl -sf http://localhost:8080/health | grep -q '"loaded": true' && echo "LOADED-ON-DEMAND"
                 in_container: true
             - check: the model is RELEASED after five idle minutes with no request
               id: strata-default-idle-unload

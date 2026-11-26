@@ -30,7 +30,7 @@ strata:
             host-global, so the driver user-space is injected per container by the runtime from
             the NVIDIA container toolkit's CDI spec. This box therefore bases on
             opencharly/pod-cdi — the POD contract — and composes NOTHING from layer-nvidia, which
-            bakes the driver user-space and belongs to opencharly/vm-nvidia. layer-cdi's plan
+            bakes the driver user-space and belongs to a GPU VM image. layer-cdi's plan
             steps enforce the boundary by failing the build when a host-coupled driver library or
             an `nvidia*` binary is baked in, so the boundary is a property of the artifact and
             not of a reviewer's attention.

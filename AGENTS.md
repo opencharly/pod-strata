@@ -11,8 +11,8 @@ is ledger D-1 in `opencharly/opencharly`'s `plan/strata-pod-and-engine-v0216-led
 
 - **`pod-strata` (here)** — a pod. The driver comes from the HOST through the NVIDIA CDI spec.
   `box/strata` bases on `pod-cdi.pod-cdi` and composes **nothing** from `layer-nvidia`.
-- **`vm-nvidia`** — the VM contract: the guest owns its kernel and bakes the driver user-space,
-  so its images compose `layer-nvidia`.
+- **A GPU VM with passthrough** — the VM contract: the guest owns its kernel and bakes the
+  driver user-space, so such images compose `layer-nvidia`.
 
 `layer-cdi`'s own plan steps enforce the boundary from the artifact's side:
 `cdi-no-baked-driver-libs` and `cdi-no-baked-driver-binaries` FAIL THE BUILD when a host-coupled
@@ -28,7 +28,7 @@ restate it, and it must never override it.
 - A second copy of the CDI rule. `layer-cdi` carries the predicate; re-deriving it in this repo's
   box would be two implementations of one rule (R2).
 
-If a change needs any of these, it belongs in `opencharly/vm-nvidia` (or, for the engine itself,
+If a change needs any of these, it belongs in a GPU VM image (or, for the engine itself,
 in `opencharly/layer-strata`), not here.
 
 ## The bed is the only witness

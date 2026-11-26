@@ -66,7 +66,7 @@ import:
     # previous pin — resolves arch v2026.325.1112 and therefore fails that load; it is also
     # the release that stopped the CDI base emitting the retired
     # `COPY --from=<carrier> .agents/skills` step (opencharly/pod-cdi#10).
-    # At v2026.323.1302 the umbrella fails to load at all (opencharly/pod-kde-vnc#3 and #4).
+    # At v2026.323.1302 the project fails to load at all.
     - pod-cdi: '@github.com/opencharly/pod-cdi:v2026.326.1530'
 discover:
     - path: box

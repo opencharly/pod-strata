@@ -39,9 +39,10 @@ strata:
             signed CUDA-13 engine component, installed from the pinned release with both digests
             verified before anything is unpacked — never compiled on the user's machine, never
             compiled on the first start. The runtime is upstream's own container entrypoint; the
-            configuration is the deployment's `env:` under upstream's own variable names; the key
-            is `API_KEY`, declared REQUIRED by the layer so `charly config` mints one rather than
-            letting the engine serve without it. The model store is a host bind at
+            configuration is the deployment's `env:` under upstream's own variable names. The key
+            `API_KEY` is OPTIONAL (`secret_accept`): the box defaults to KEYLESS
+            (`STRATA_NO_API_KEY: "1"`, because upstream otherwise mints a key and refuses to serve
+            without one), and an operator who wants a key supplies one. The model store is a host bind at
             `~/.local/share/strata` mounted at `/data` (`Strata-data/` for the weights and the
             prepared pack, `state/` for the preset and the key, `install/` for the run settings).
             The weights are 37-188 GB and licensed separately from the engine, so they never
@@ -73,6 +74,16 @@ strata:
         # the `arch` namespace import AND its own `builder:` map here.
         build:
             - pac
+        # KEYLESS BY DEFAULT (opencharly/pod-strata#<this PR>). Upstream's launcher mints an
+        # API_KEY and refuses to serve without one when this is unset, which makes every fresh
+        # deployment demand a credential nobody asked for. The engine's own keyless switch is
+        # upstream's `STRATA_NO_API_KEY`, so the box states it as the default contract; an
+        # operator who WANTS a key sets `-e STRATA_NO_API_KEY=` (or supplies `API_KEY`) and the
+        # layer's `secret_accept` serves it. Measured on the running deploy: with this default
+        # `/health` reports `"api_key": false`; before it, the launcher logged
+        # "[!] No API_KEY was set, so Strata made one … will not run without a key".
+        env:
+            STRATA_NO_API_KEY: "1"
         candy:
             # opencharly/layer-strata's engine candy: upstream's released Terminal + signed CUDA-13
             # engine component, upstream's own entrypoint/healthcheck/wrapper, the rootless XDG
